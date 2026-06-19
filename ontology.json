@@ -1,0 +1,14 @@
+{
+  "theory": "3D Binary Cube Isomorphic Model",
+  "objects": {
+    "Vertex": 8,
+    "DirectedEdge": 56,
+    "Hexagram": 64,
+    "Yao": 384
+  },
+  "mappings": [
+    ["Vertex", "Trigram"],
+    ["DirectedEdge", "TransformationHexagram"],
+    ["Vertex+DirectedEdge", "Hexagram"]
+  ]
+}
