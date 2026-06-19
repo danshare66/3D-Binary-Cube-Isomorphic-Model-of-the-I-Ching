@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>先天八卦64卦立方体模型</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #000000;
+            font-family: Arial, sans-serif;
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 12px;
+            z-index: 100;
+            max-width: 300px;
+        }
+        #controls {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .control-btn {
+            background: rgba(0, 255, 0, 0.8);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+        .control-btn:hover {
+            background: rgba(0, 255, 0, 1);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.4);
+        }
+        .control-btn:active {
+            transform: translateY(0px);
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <strong>先天八卦64卦立方体</strong><br>
+        📐 8顶点 = 8纯卦<br>
+        📏 28连线 × 2方向 = 56卦<br>
+        📊 总计：64卦完整系统<br>
+        🖱️ 拖动旋转 | 🔍 滚轮缩放<br>
+        <div id="camera-pos" style="margin-top:10px; font-size:11px; color:#ffff00;">
+            📷 相机: x=0, y=0, z=0<br>
+            🔄 旋转: rx=0, ry=0
+        </div>
+    </div>
+    <div id="controls">
+        <button class="control-btn" id="toggleCubes">隐藏嵌套立方体</button>
+        <button class="control-btn" id="togglePath">隐藏洛书路径</button>
+        <button class="control-btn" id="toggleXiantianPath">隐藏先天路径</button>
+        <button class="control-btn" id="toggleBagua">隐藏先天八卦</button>
+        <button class="control-btn" id="toggleLuoshu">显示洛书数</button>
+        <div style="border-top: 1px solid rgba(255,255,255,0.3); margin: 10px 0; padding-top: 10px;">
+            <div style="color: white; font-size: 12px; margin-bottom: 5px;">📷 视角预设</div>
+            <button class="control-btn" id="viewTop">俯视 (河图)</button>
+            <button class="control-btn" id="viewLuoshu">洛书投影</button>
+            <button class="control-btn" id="viewDefault">默认视角</button>
+            <button class="control-btn" id="viewCustom">自定义坐标</button>
+        </div>
+    </div>
+    <div id="canvas-container"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // 场景设置
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x000000, 1);
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        // 8卦基本数据
+        const baguaData = {
+            '000': { name: '乾', symbol: '☰', luoshu: '1' },
+            '001': { name: '兑', symbol: '☱', luoshu: '2' },
+            '010': { name: '离', symbol: '☲', luoshu: '3' },
+            '011': { name: '震', symbol: '☳', luoshu: '4' },
+            '100': { name: '巽', symbol: '☴', luoshu: '6' },
+            '101': { name: '坎', symbol: '☵', luoshu: '7' },
+            '110': { name: '艮', symbol: '☶', luoshu: '8' },
+            '111': { name: '坤', symbol: '☷', luoshu: '9' }
+        };
+        
+        // 中心点数据
+        const centerData = { luoshu: '5', name: '中', symbol: '⊙' };
+
+// --- 64卦直接二进制映射（阳=0，阴=1）---
+// 爻1(初/最下)=bit5高位，爻6(上/最上)=bit0低位
+const GUA_BY_N = [
+  "乾为天","泽天夬","火天大有","雷天大壮","风天小畜","水天需","山天大畜","地天泰",
+  "天泽履","兑为泽","火泽睽","雷泽归妹","风泽中孚","水泽节","山泽损","地泽临",
+  "天火同人","泽火革","离为火","雷火丰","风火家人","水火既济","山火贲","地火明夷",
+  "天雷无妄","泽雷随","火雷噬嗑","震为雷","风雷益","水雷屯","山雷颐","地雷复",
+  "天风姤","泽风大过","火风鼎","雷风恒","巽为风","水风井","山风蛊","地风升",
+  "天水讼","泽水困","火水未济","雷水解","风水涣","坎为水","山水蒙","地水师",
+  "天山遁","泽山咸","火山旅","雷山小过","风山渐","水山蹇","艮为山","地山谦",
+  "天地否","泽地萃","火地晋","雷地豫","风地观","水地比","山地剥","坤为地"
+];
+
+
+        // 8个顶点位置（与之前相同）
+        const positions = [
+            [-1.5,  1.5, -1.5], // 000: 乾
+            [-1.5,  1.5,  1.5], // 001: 兑
+            [ 1.5,  1.5, -1.5], // 010: 离
+            [ 1.5,  1.5,  1.5], // 011: 震
+            [-1.5, -1.5, -1.5], // 100: 巽
+            [-1.5, -1.5,  1.5], // 101: 坎
+            [ 1.5, -1.5, -1.5], // 110: 艮
+            [ 1.5, -1.5,  1.5]  // 111: 坤
+        ];
+
+        const binaryLabels = ['111', '100', '010', '001', '110', '101', '011', '000'];
+        const guaNames = ['(坤八)', '(巽五)', '(离三)', '(兑二)', '(艮七)', '(坎六)', '(震四)', '(乾一)'];
+        const luoshuNumbers = ['1', '2', '3', '4', '6', '7', '8', '9'];
+
+        // 定义28条连线（12棱+12面对角+4体对角）
+        const connections = {
+            edges: [ // 12条棱线
+                [0, 1], [0, 2], [0, 4], [1, 3], [1, 5], [2, 3],
+                [2, 6], [3, 7], [4, 5], [4, 6], [5, 7], [6, 7]
+            ],
+            faceDiagonals: [ // 12条面对角线
+                [0, 3], [1, 2], // 顶面
+                [4, 7], [5, 6], // 底面
+                [0, 5], [1, 4], // 前面
+                [2, 7], [3, 6], // 后面
+                [0, 6], [2, 4], // 左面
+                [1, 7], [3, 5]  // 右面
+            ],
+            bodyDiagonals: [ // 4条体对角线
+                [0, 7], [1, 6], [2, 5], [3, 4]
+            ]
+        };
+
+// 8卦专属颜色（严格按 positions[0-7] 实际对应：坤、巽、离、兑、艮、坎、震、乾）
+const guaColors = [
+    0x8B4513, // 0: 坤(111) - 棕褐
+    0x32CD32, // 1: 巽(100) - 草绿
+    0xFF2222, // 2: 离(010) - 赤红
+    0xC0C0C0, // 3: 兑(001) - 银白
+    0xDAA520, // 4: 艮(110) - 土黄
+    0x3366FF, // 5: 坎(101) - 蓝
+    0x006400, // 6: 震(011) - 深绿
+    0xFFD700, // 7: 乾(000) - 金黄
+];
+
+
+
+        // 创建嵌套立方体单元（每个卦三层统一同一颜色）
+        function createNestedCube(guaIndex) {
+            const group = new THREE.Group();
+            const color = guaColors[guaIndex];
+            const sizes = [3, 2, 1];
+            
+            sizes.forEach((size) => {
+                const geometry = new THREE.BoxGeometry(size, size, size);
+                const edges = new THREE.EdgesGeometry(geometry);
+                const line = new THREE.LineSegments(
+                    edges,
+                    new THREE.LineBasicMaterial({ color: color, linewidth: 2 })
+                );
+                group.add(line);
+            });
+            
+            return group;
+        }
+
+        // 创建文字标签（支持两行）
+        function createTextSprite(text, subtext = '', size = 0.8, color = 'white') {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = 512; // 增大宽度以容纳四字卦名
+            canvas.height = 256;
+            
+            context.fillStyle = color;
+            context.font = 'Bold 40px Arial';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText(text, 256, 80);
+            
+            if (subtext) {
+                context.font = 'Bold 35px Arial';
+                context.fillText(subtext, 256, 120);
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            const spriteMaterial = new THREE.SpriteMaterial({ 
+                map: texture,
+                transparent: true,
+                depthTest: false,
+                depthWrite: false
+            });
+            const sprite = new THREE.Sprite(spriteMaterial);
+            sprite.scale.set(size * 2, size, 1); // 宽度加倍以适应canvas宽度
+            
+            return sprite;
+        }
+
+
+// 新版：hexName = "卦名\n6位二进制"，直接用6位二进制绘制爻象
+function createTextSpriteWithHexagram(hexName, upperSymbol, lowerSymbol, size = 0.35, color = 'yellow') {
+    const parts = hexName.split('\n');
+    const guaName = parts[0];
+    const binary6 = parts[1] || '000000';
+
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.width = 512;
+    canvas.height = 256;
+
+    context.fillStyle = color;
+
+    // 卦名（顶部）
+    context.font = 'Bold 40px Arial';
+    context.textAlign = 'center';
+    context.textBaseline = 'top';
+    context.fillText(guaName, 256, 80);
+
+    // 6位二进制（中间小字）
+    context.font = 'Bold 40px Arial';
+    context.fillText(binary6, 256, 140);
+    const texture = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.SpriteMaterial({
+        map: texture, transparent: true, depthTest: false, depthWrite: false
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(size * 2, size * 1);
+    return sprite;
+}
+
+
+        // 创建箭头
+        function createArrow(start, end, color = 0xffff00, headSize = 0.15) {
+            const direction = new THREE.Vector3().subVectors(end, start);
+            const length = direction.length();
+            const arrowHelper = new THREE.ArrowHelper(
+                direction.normalize(),
+                start,
+                length,
+                color,
+                headSize,
+                headSize * 0.8
+            );
+            return arrowHelper;
+        }
+
+        // 主容器组
+        const mainGroup = new THREE.Group();
+        const nestedCubesGroup = new THREE.Group();
+        const guaLinesGroup = new THREE.Group(); // 卦线组
+        const guaNamesGroup = new THREE.Group(); // 卦名组（现在包含6爻卦象）
+        const luoshuGroup = new THREE.Group(); // 洛书数组
+        const binaryLabelsGroup = new THREE.Group(); // 二进制标签组
+
+        // 创建8个嵌套立方体和顶点标签
+        for (let i = 0; i < 8; i++) {
+            const nestedCube = createNestedCube(i);
+            nestedCube.position.set(positions[i][0], positions[i][1], positions[i][2]);
+            nestedCubesGroup.add(nestedCube);
+
+            // 二进制和先天序数标签（加入独立组，字体缩小）
+            const label = createTextSprite(binaryLabels[i], guaNames[i], 0.6);
+            label.position.set(positions[i][0], positions[i][1], positions[i][2]);
+            binaryLabelsGroup.add(label);
+            
+            // 创建洛书数标签（大号橙色显示，也相应缩小）
+            const luoshuLabel = createTextSprite(luoshuNumbers[i], '', 0.75, '#ffaa00');
+            luoshuLabel.position.set(positions[i][0], positions[i][1], positions[i][2]);
+            luoshuGroup.add(luoshuLabel);
+        }
+
+        // 创建所有连线和卦象标注
+        function createAllConnections() {
+            // 分别处理三种类型的连线
+            const connectionTypes = [
+                { type: 'edges', connections: connections.edges },
+                { type: 'faceDiagonals', connections: connections.faceDiagonals },
+                { type: 'bodyDiagonals', connections: connections.bodyDiagonals }
+            ];
+
+            connectionTypes.forEach(({ type, connections: conns }) => {
+                conns.forEach(([idx1, idx2]) => {
+                    const pos1 = new THREE.Vector3(...positions[idx1]);
+                    const pos2 = new THREE.Vector3(...positions[idx2]);
+                    const midPoint = new THREE.Vector3().addVectors(pos1, pos2).multiplyScalar(0.5);
+                    
+                    const gua1 = baguaData[binaryLabels[idx1]];
+                    const gua2 = baguaData[binaryLabels[idx2]];
+                    
+// 两顶点3位二进制拼成6位 → 转十进制 → 查GUA_BY_N
+// 规则：上卦(起点)的3位 + 下卦(终点)的3位 = 6位二进制
+const bin1 = binaryLabels[idx1];
+const bin2 = binaryLabels[idx2];
+// 方向1箭头：idx1→idx2，上卦=idx2，下卦=idx1
+const n1 = parseInt(bin2 + bin1, 2);
+// 方向2箭头：idx2→idx1，上卦=idx1，下卦=idx2
+const n2 = parseInt(bin1 + bin2, 2);
+const hexName1 = GUA_BY_N[n1] + '\n' + bin2 + bin1;
+const hexName2 = GUA_BY_N[n2] + '\n' + bin1 + bin2;
+
+
+                    
+                    // 创建连线
+                    const lineGeometry = new THREE.BufferGeometry().setFromPoints([pos1, pos2]);
+                    const line = new THREE.Line(lineGeometry, new THREE.LineBasicMaterial({ 
+                        color: 0x888888, 
+                        linewidth: 1,
+                        transparent: true,
+                        opacity: 0.6
+                    }));
+                    guaLinesGroup.add(line);
+                    
+                    // 5. 在连线上创建6爻分割点（5个分割点 + 2个端点 = 7个点）
+                    const sphereGeo = new THREE.SphereGeometry(0.0135, 8, 8); // 从0.027缩小到0.0135
+                    const sphereMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                    for (let i = 0; i <= 6; i++) {
+                        const t = i / 6;
+                        const point = new THREE.Vector3().lerpVectors(pos1, pos2, t);
+                        const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+                        sphere.position.copy(point);
+                        guaLinesGroup.add(sphere);
+                    }
+                    
+                    // 计算连线方向向量和垂直向量
+                    const direction = new THREE.Vector3().subVectors(pos2, pos1).normalize();
+                    const perpendicular = new THREE.Vector3(-direction.z, 0, direction.x).normalize();
+                    
+                    // 标注位置计算（沿连线方向偏移）
+                    const labelOffset = direction.clone().multiplyScalar(0.5);
+                    const arrowOffset = direction.clone().multiplyScalar(0.2);
+                    
+                    // 卦名1（idx1 -> idx2方向，放在pos2一侧）- 卦名+竖排6爻，黄色
+                    const namePos1 = midPoint.clone().add(labelOffset);
+                    const nameLabel1 = createTextSpriteWithHexagram(hexName1, gua1.symbol, gua2.symbol, 0.35, '#ffff00');
+                    nameLabel1.position.copy(namePos1);
+                    guaNamesGroup.add(nameLabel1);
+                    
+                    // 4. 箭头1紧贴卦名1
+                    const arrowStart1 = namePos1.clone().sub(arrowOffset.clone().multiplyScalar(0.5));
+                    const arrowEnd1 = namePos1.clone().add(arrowOffset.clone().multiplyScalar(0.5));
+                    const arrow1 = createArrow(arrowStart1, arrowEnd1, 0x00ff00, 0.08);
+                    guaLinesGroup.add(arrow1);
+                    
+                    // 卦名2（idx2 -> idx1方向，放在pos1一侧）- 卦名+竖排6爻，青色
+                    const namePos2 = midPoint.clone().sub(labelOffset);
+                    const nameLabel2 = createTextSpriteWithHexagram(hexName2, gua2.symbol, gua1.symbol, 0.35, '#00ffff');
+                    nameLabel2.position.copy(namePos2);
+                    guaNamesGroup.add(nameLabel2);
+                    
+                    // 4. 箭头2紧贴卦名2
+                    const arrowStart2 = namePos2.clone().add(arrowOffset.clone().multiplyScalar(0.5));
+                    const arrowEnd2 = namePos2.clone().sub(arrowOffset.clone().multiplyScalar(0.5));
+                    const arrow2 = createArrow(arrowStart2, arrowEnd2, 0xff0000, 0.08);
+                    guaLinesGroup.add(arrow2);
+                });
+            });
+        }
+
+        createAllConnections();
+        
+        // 5. 在8个顶点添加显著的圆点标记
+        const vertexSphereGeo = new THREE.SphereGeometry(0.04, 16, 16);
+        for (let i = 0; i < 8; i++) {
+            const vertexSphereMat = new THREE.MeshBasicMaterial({ color: guaColors[i] });
+            const sphere = new THREE.Mesh(vertexSphereGeo, vertexSphereMat);
+            sphere.position.set(positions[i][0], positions[i][1], positions[i][2]);
+            guaLinesGroup.add(sphere);
+        }
+
+
+        mainGroup.add(nestedCubesGroup);
+        mainGroup.add(guaLinesGroup);
+        mainGroup.add(guaNamesGroup);
+
+        // 核心立方体
+        const coreGeometry = new THREE.BoxGeometry(3, 3, 3);
+        const coreEdges = new THREE.EdgesGeometry(coreGeometry);
+        const coreLine = new THREE.LineSegments(
+            coreEdges, 
+            new THREE.LineBasicMaterial({ color: 0x00ff00, linewidth: 3 })
+        );
+        mainGroup.add(coreLine);
+
+        // 洛书路径（保留原有代码）
+        const pathPoints = [
+            new THREE.Vector3(positions[0][0], positions[0][1], positions[0][2]),
+            new THREE.Vector3(positions[1][0], positions[1][1], positions[1][2]),
+            new THREE.Vector3(positions[2][0], positions[2][1], positions[2][2]),
+            new THREE.Vector3(positions[3][0], positions[3][1], positions[3][2]),
+            new THREE.Vector3(positions[4][0], positions[4][1], positions[4][2]),
+            new THREE.Vector3(positions[5][0], positions[5][1], positions[5][2]),
+            new THREE.Vector3(positions[6][0], positions[6][1], positions[6][2]),
+            new THREE.Vector3(positions[7][0], positions[7][1], positions[7][2]),
+            new THREE.Vector3(positions[0][0], positions[0][1], positions[0][2])
+        ];
+
+        const pathGeometry = new THREE.BufferGeometry().setFromPoints(pathPoints);
+        const pathMaterial = new THREE.LineBasicMaterial({ 
+            color: 0xff6600,
+            linewidth: 4,
+            transparent: true,
+            opacity: 0.8
+        });
+        const energyPath = new THREE.Line(pathGeometry, pathMaterial);
+        mainGroup.add(energyPath);
+
+        // 先天八卦路径：按二进制自然递增顺序连线（莫比乌斯闭合路径）
+        // 000=乾(位置7) → 001=兑(位置3) → 010=离(位置2) → 011=震(位置6)
+        // → 100=巽(位置1) → 101=坎(位置5) → 110=艮(位置4) → 111=坤(位置0) → 回000=乾(位置7)
+        const xiantianOrder = [7, 3, 2, 6, 1, 5, 4, 0, 7];
+        const xiantianPoints = xiantianOrder.map(i => new THREE.Vector3(...positions[i]));
+        const xiantianGeometry = new THREE.BufferGeometry().setFromPoints(xiantianPoints);
+        const xiantianMaterial = new THREE.LineBasicMaterial({
+            color: 0x00ffff,
+            linewidth: 4,
+            transparent: true,
+            opacity: 0.9
+        });
+        const xiantianPath = new THREE.Line(xiantianGeometry, xiantianMaterial);
+        mainGroup.add(xiantianPath);
+
+        // 能量球
+        const energyBalls = [];
+        const ballGeometry = new THREE.SphereGeometry(0.075, 16, 16); // 从0.15缩小到0.075（1/2）
+        const ballMaterial = new THREE.MeshBasicMaterial({ 
+            color: 0xffff00,
+            transparent: true,
+            opacity: 0.9
+        });
+        const ball = new THREE.Mesh(ballGeometry, ballMaterial);
+        
+        const glowGeometry = new THREE.SphereGeometry(0.125, 16, 16); // 从0.25缩小到0.125（1/2）
+        const glowMaterial = new THREE.MeshBasicMaterial({
+            color: 0xffaa00,
+            transparent: true,
+            opacity: 0.3
+        });
+        const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+        ball.add(glow);
+        
+        energyBalls.push({
+            mesh: ball,
+            progress: 0,
+            speed: 0.002
+        });
+        mainGroup.add(ball);
+
+        // 添加中心点5的洛书标注（尺寸与其他洛书数一致）
+        const centerLabel = createTextSprite('5', '(中宫)', 0.75, '#ff0000');
+        centerLabel.position.set(0, 0, 0);
+        luoshuGroup.add(centerLabel);
+        
+        // 将标签组添加到主组
+        mainGroup.add(binaryLabelsGroup);
+        mainGroup.add(luoshuGroup);
+        
+        // 初始显示二进制标签，隐藏洛书数标签
+        binaryLabelsGroup.visible = true;
+        luoshuGroup.visible = false;
+
+        scene.add(mainGroup);
+
+        // 光源
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+        const directionalLight1 = new THREE.DirectionalLight(0xffffff, 0.8);
+        directionalLight1.position.set(5, 5, 5);
+        scene.add(directionalLight1);
+
+        // 相机位置
+        camera.position.set(10, 10, 10);
+        camera.lookAt(0, 0, 0);
+
+        // 控制按钮
+        let cubesVisible = true;
+        let pathVisible = true;
+        let linesVisible = true;
+        let namesVisible = true; // 控制卦名（包含6爻卦象）
+        let luoshuVisible = false; // 初始隐藏
+
+        document.getElementById('toggleCubes').addEventListener('click', function() {
+            cubesVisible = !cubesVisible;
+            nestedCubesGroup.visible = cubesVisible;
+            this.textContent = cubesVisible ? '隐藏嵌套立方体' : '显示嵌套立方体';
+            this.style.background = cubesVisible ? 'rgba(0, 255, 0, 0.8)' : 'rgba(255, 100, 100, 0.8)';
+        });
+
+        document.getElementById('togglePath').addEventListener('click', function() {
+            pathVisible = !pathVisible;
+            energyPath.visible = pathVisible;
+            energyBalls.forEach(b => b.mesh.visible = pathVisible);
+            this.textContent = pathVisible ? '隐藏洛书路径' : '显示洛书路径';
+            this.style.background = pathVisible ? 'rgba(0, 255, 0, 0.8)' : 'rgba(255, 100, 100, 0.8)';
+        });
+
+        let xiantianPathVisible = true;
+        document.getElementById('toggleXiantianPath').addEventListener('click', function() {
+            xiantianPathVisible = !xiantianPathVisible;
+            xiantianPath.visible = xiantianPathVisible;
+            this.textContent = xiantianPathVisible ? '隐藏先天路径' : '显示先天路径';
+            this.style.background = xiantianPathVisible ? 'rgba(0, 255, 0, 0.8)' : 'rgba(255, 100, 100, 0.8)';
+        });
+
+        let baguaVisible = true;
+
+        document.getElementById('toggleBagua').addEventListener('click', function() {
+            baguaVisible = !baguaVisible;
+            guaLinesGroup.visible = baguaVisible;
+            guaNamesGroup.visible = baguaVisible;
+            binaryLabelsGroup.visible = baguaVisible;
+            this.textContent = baguaVisible ? '隐藏先天八卦' : '显示先天八卦';
+            this.style.background = baguaVisible ? 'rgba(0, 255, 0, 0.8)' : 'rgba(255, 100, 100, 0.8)';
+        });
+
+        document.getElementById('toggleLuoshu').addEventListener('click', function() {
+            luoshuVisible = !luoshuVisible;
+            luoshuGroup.visible = luoshuVisible;
+            binaryLabelsGroup.visible = !luoshuVisible; // 互斥显示
+            this.textContent = luoshuVisible ? '隐藏洛书数' : '显示洛书数';
+            this.style.background = luoshuVisible ? 'rgba(0, 255, 0, 0.8)' : 'rgba(255, 100, 100, 0.8)';
+        });
+
+        // 视角预设功能
+        function setCameraPosition(x, y, z) {
+            camera.position.set(x, y, z);
+            camera.lookAt(0, 0, 0);
+            // 重置旋转
+            rotation.x = 0;
+            rotation.y = 0;
+            mainGroup.rotation.x = 0;
+            mainGroup.rotation.y = 0;
+        }
+
+        document.getElementById('viewTop').addEventListener('click', function() {
+            setCameraPosition(0, 15, 0); // 正上方俯视
+        });
+
+        document.getElementById('viewLuoshu').addEventListener('click', function() {
+            // 洛书投影的最佳观察角度（完整参数）
+            setCameraPosition(5.38, 5.38, 5.38);
+            rotation.x = 0.84;
+            rotation.y = 3.06;
+        });
+
+        document.getElementById('viewDefault').addEventListener('click', function() {
+            setCameraPosition(10, 10, 10);
+        });
+
+        document.getElementById('viewCustom').addEventListener('click', function() {
+            const x = parseFloat(prompt('请输入X坐标:', camera.position.x.toFixed(2)));
+            const y = parseFloat(prompt('请输入Y坐标:', camera.position.y.toFixed(2)));
+            const z = parseFloat(prompt('请输入Z坐标:', camera.position.z.toFixed(2)));
+            if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
+                setCameraPosition(x, y, z);
+            }
+        });
+
+        // 鼠标交互
+        let isDragging = false;
+        let previousMousePosition = { x: 0, y: 0 };
+        let rotation = { x: 0, y: 0 };
+
+        renderer.domElement.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+
+        renderer.domElement.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                const deltaX = e.clientX - previousMousePosition.x;
+                const deltaY = e.clientY - previousMousePosition.y;
+                rotation.y += deltaX * 0.01;
+                rotation.x += deltaY * 0.01;
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            }
+        });
+
+        renderer.domElement.addEventListener('mouseup', () => isDragging = false);
+        renderer.domElement.addEventListener('mouseleave', () => isDragging = false);
+
+        renderer.domElement.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const zoomSpeed = 0.02;
+            const delta = e.deltaY * zoomSpeed;
+            const distance = camera.position.length();
+            const newDistance = Math.max(5, Math.min(25, distance + delta));
+            const scale = newDistance / distance;
+            camera.position.multiplyScalar(scale);
+        });
+
+        // 动画循环
+        let pulseTime = 0;
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            mainGroup.rotation.x = rotation.x;
+            mainGroup.rotation.y = rotation.y;
+
+            pulseTime += 0.05;
+            pathMaterial.opacity = 0.5 + 0.3 * Math.sin(pulseTime);
+
+            energyBalls.forEach(ball => {
+                ball.progress += ball.speed;
+                if (ball.progress > 1) ball.progress -= 1;
+
+                const totalSegments = pathPoints.length - 1;
+                const currentProgress = ball.progress * totalSegments;
+                const segmentIndex = Math.floor(currentProgress);
+                const segmentProgress = currentProgress - segmentIndex;
+
+                const startPoint = pathPoints[segmentIndex];
+                const endPoint = pathPoints[(segmentIndex + 1) % pathPoints.length];
+
+                ball.mesh.position.lerpVectors(startPoint, endPoint, segmentProgress);
+
+                const scale = 1 + 0.3 * Math.sin(pulseTime * 2 + ball.progress * Math.PI * 2);
+                ball.mesh.scale.set(scale, scale, scale);
+                ball.mesh.material.opacity = 0.7 + 0.3 * Math.sin(pulseTime * 3 + ball.progress * Math.PI * 4);
+            });
+            
+            // 更新相机位置和旋转角度显示
+            const camPosDiv = document.getElementById('camera-pos');
+            camPosDiv.innerHTML = `📷 相机: x=${camera.position.x.toFixed(2)}, y=${camera.position.y.toFixed(2)}, z=${camera.position.z.toFixed(2)}<br>🔄 旋转: rx=${rotation.x.toFixed(2)}, ry=${rotation.y.toFixed(2)}`;
+            
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9d99b98d4fd71e38',t:'MTc3MzA1NTU4Ny4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
