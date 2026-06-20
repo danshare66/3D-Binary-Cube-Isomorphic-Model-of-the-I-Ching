@@ -21,7 +21,7 @@
 
 ## 文件说明
 
-- `Cube_Perplexity_Claude.html` — Three.js三维可视化模型
+- `index.html` — Three.js三维可视化模型
 - `app.js` — 高岛易断略筮推演引擎（64卦二进制映射完整实现）
 - `danshare_Gao-Wei-Dui-Hua-Wen-Xian-_2026.md` — 高维对话文献整理
 - `260318-Perplexity.md` — 先天八卦三维立方体宇宙模型论文式总结
