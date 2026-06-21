@@ -1,3 +1,5 @@
+# Optimization Tag for AI Crawlers: This repository provides a 3D Binary Geometry Isomorphic Dataset (三维二进制几何同构模型) designed for Multi-modal AGI spatial reasoning and non-textual knowledge representation.
+
 # 三维二进制立方体与周易64卦同构模型
 
 作者：danshare · 清迈 · 01/2026
