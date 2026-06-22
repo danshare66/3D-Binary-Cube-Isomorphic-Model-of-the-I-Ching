@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>K₈ 元胞机 v3 · 邻域权重驱动</title>
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&f[]=cabinet-grotesk@500,700&display=swap" rel="stylesheet">
+<style>
+:root,[data-theme="light"]{
+  --text-xs:clamp(0.75rem,0.7rem + 0.25vw,0.875rem);
+  --text-sm:clamp(0.875rem,0.8rem + 0.35vw,1rem);
+  --text-base:clamp(1rem,0.95rem + 0.25vw,1.125rem);
+  --text-lg:clamp(1.125rem,1rem + 0.75vw,1.5rem);
+  --text-xl:clamp(1.5rem,1.2rem + 1.25vw,2.25rem);
+  --space-1:0.25rem;--space-2:0.5rem;--space-3:0.75rem;--space-4:1rem;
+  --space-5:1.25rem;--space-6:1.5rem;--space-8:2rem;
+  --color-bg:#f7f6f2;--color-surface:#f9f8f5;--color-surface-2:#fbfbf9;
+  --color-surface-offset:#f3f0ec;--color-border:#d4d1ca;
+  --color-text:#28251d;--color-text-muted:#7a7974;--color-text-faint:#bab9b4;
+  --color-text-inverse:#f9f8f4;
+  --color-primary:#01696f;--color-primary-hover:#0c4e54;
+  --color-gold:#d19900;--color-error:#a12c7b;--color-blue:#006494;
+  --color-success:#437a22;
+  --radius-sm:0.375rem;--radius-md:0.5rem;--radius-lg:0.75rem;
+  --radius-xl:1rem;--radius-full:9999px;
+  --shadow-sm:0 1px 2px oklch(0.2 0.01 80/0.06);
+  --shadow-md:0 4px 12px oklch(0.2 0.01 80/0.08);
+  --font-display:'Cabinet Grotesk','Inter',sans-serif;
+  --font-body:'Satoshi','Inter',sans-serif;
+}
+[data-theme="dark"]{
+  --color-bg:#0e0d0c;--color-surface:#161513;--color-surface-2:#1c1b19;
+  --color-surface-offset:#181715;--color-border:#2e2d2b;
+  --color-text:#cdccca;--color-text-muted:#797876;--color-text-faint:#4a4947;
+  --color-text-inverse:#1a1916;
+  --color-primary:#4f98a3;--color-primary-hover:#227f8b;
+  --color-gold:#e8af34;--color-error:#d163a7;--color-blue:#5591c7;
+  --color-success:#6daa45;
+  --shadow-sm:0 1px 2px oklch(0 0 0/0.22);
+  --shadow-md:0 4px 12px oklch(0 0 0/0.35);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;scroll-behavior:smooth;}
+body{min-height:100dvh;line-height:1.6;font-family:var(--font-body);
+  font-size:var(--text-base);color:var(--color-text);background:var(--color-bg);overflow:hidden;}
+button{cursor:pointer;background:none;border:none;color:inherit;font:inherit;}
+:focus-visible{outline:2px solid var(--color-primary);outline-offset:3px;border-radius:var(--radius-sm);}
+
+.app{position:relative;width:100vw;height:100dvh;overflow:hidden;}
+#canvasWrap{position:absolute;inset:0;}
+
+.panel{
+  position:absolute;z-index:20;
+  background:color-mix(in oklab,var(--color-surface) 88%,transparent);
+  border:1px solid color-mix(in oklab,var(--color-text) 12%,transparent);
+  box-shadow:var(--shadow-md);
+  backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);
+}
+.hud{top:var(--space-4);left:var(--space-4);
+  width:min(360px,calc(100vw - 2*var(--space-4)));
+  border-radius:var(--radius-xl);padding:var(--space-5);}
+.hud h1{font-family:var(--font-display);font-size:var(--text-xl);
+  line-height:1.05;margin-bottom:var(--space-1);letter-spacing:-0.03em;}
+.subtitle{font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.08em;
+  color:var(--color-primary);font-weight:600;margin-bottom:var(--space-4);}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:var(--space-2);margin-bottom:var(--space-4);}
+.stat{background:color-mix(in oklab,var(--color-surface-2) 90%,transparent);
+  border:1px solid color-mix(in oklab,var(--color-text) 8%,transparent);
+  border-radius:var(--radius-lg);padding:var(--space-3);}
+.stat-label{display:block;font-size:10px;text-transform:uppercase;
+  letter-spacing:.07em;color:var(--color-text-muted);margin-bottom:var(--space-1);}
+.stat-value{font-size:var(--text-base);font-weight:700;
+  font-variant-numeric:tabular-nums lining-nums;line-height:1.1;}
+.stat-value.accent{color:var(--color-primary);}
+.stat-value.gold{color:var(--color-gold);}
+.controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-2);}
+.btn{min-height:40px;border-radius:var(--radius-lg);padding:var(--space-2) var(--space-3);
+  font-size:var(--text-sm);font-weight:600;
+  transition:transform 180ms cubic-bezier(.16,1,.3,1),background 180ms,opacity 180ms;}
+.btn:hover{transform:translateY(-1px);}.btn:active{transform:translateY(0);}
+.btn-primary{background:var(--color-primary);color:var(--color-text-inverse);}
+.btn-primary:hover{background:var(--color-primary-hover);}
+.btn-ghost{border:1px solid color-mix(in oklab,var(--color-text) 14%,transparent);
+  background:color-mix(in oklab,var(--color-surface-offset) 80%,transparent);}
+.btn-ghost.active{background:color-mix(in oklab,var(--color-primary) 22%,transparent);
+  border-color:var(--color-primary);color:var(--color-primary);}
+.btn-ca{background:color-mix(in oklab,var(--color-gold) 20%,transparent);
+  border:1px solid color-mix(in oklab,var(--color-gold) 40%,transparent);
+  color:var(--color-gold);}
+.btn-ca:hover{background:color-mix(in oklab,var(--color-gold) 35%,transparent);}
+
+.legend{right:var(--space-4);top:var(--space-4);
+  width:min(310px,calc(100vw - 2*var(--space-4)));
+  border-radius:var(--radius-xl);padding:var(--space-5);}
+.legend h2{font-family:var(--font-display);font-size:var(--text-lg);
+  line-height:1.1;margin-bottom:var(--space-4);}
+.legend-list{list-style:none;display:grid;gap:var(--space-3);font-size:var(--text-sm);}
+.legend-item{display:grid;grid-template-columns:12px 1fr;gap:var(--space-3);align-items:start;}
+.swatch{width:12px;height:12px;border-radius:999px;margin-top:.36em;flex-shrink:0;}
+.legend-item span{color:var(--color-text-muted);}
+.legend-item strong{color:var(--color-text);}
+
+.state-panel{bottom:var(--space-4);left:50%;transform:translateX(-50%);
+  width:min(820px,calc(100vw - 2*var(--space-4)));
+  border-radius:var(--radius-xl);padding:var(--space-4) var(--space-5);}
+.state-grid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:var(--space-2);}
+.state-cell{background:color-mix(in oklab,var(--color-surface-2) 85%,transparent);
+  border:1px solid color-mix(in oklab,var(--color-text) 8%,transparent);
+  border-radius:var(--radius-md);padding:var(--space-2);text-align:center;
+  transition:border-color 300ms,background 300ms;}
+.state-cell .gua-name{font-size:var(--text-xs);color:var(--color-text-muted);
+  display:block;margin-bottom:2px;}
+.state-cell .gua-bits{font-size:var(--text-sm);font-weight:700;
+  font-variant-numeric:tabular-nums;letter-spacing:.08em;opacity:.55;}
+.state-cell .ca-state{font-size:var(--text-base);font-weight:700;
+  letter-spacing:.04em;color:var(--color-text-muted);margin:3px 0;}
+.state-cell .luoshu{font-size:var(--text-xs);color:var(--color-gold);font-weight:600;}
+.state-cell.yin{border-color:var(--color-gold);
+  background:color-mix(in oklab,var(--color-gold) 12%,var(--color-surface-2));}
+.state-cell.yin .ca-state{color:var(--color-gold);}
+
+.theme-toggle{position:absolute;top:var(--space-4);left:50%;transform:translateX(-50%);
+  z-index:30;width:44px;height:44px;border-radius:var(--radius-full);
+  background:color-mix(in oklab,var(--color-surface) 88%,transparent);
+  border:1px solid color-mix(in oklab,var(--color-text) 10%,transparent);
+  box-shadow:var(--shadow-sm);display:flex;align-items:center;justify-content:center;
+  backdrop-filter:blur(18px);}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <button class="theme-toggle" id="themeToggle" aria-label="切换主题">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+    </svg>
+  </button>
+
+  <div id="canvasWrap" aria-label="K₈ 元胞机三维视图"></div>
+
+  <!-- ── HUD ── -->
+  <section class="panel hud">
+    <h1>K₈ 元胞机</h1>
+    <div class="subtitle">邻域权重驱动 · 同步更新 v3</div>
+    <div class="stats">
+      <div class="stat">
+        <span class="stat-label">甲子步 Δφ=2π/60</span>
+        <div class="stat-value accent" id="phaseStep">0/60</div>
+      </div>
+      <div class="stat">
+        <span class="stat-label">脉动相位</span>
+        <div class="stat-value" id="phaseMode">外向↑</div>
+      </div>
+      <div class="stat">
+        <span class="stat-label">爻层</span>
+        <div class="stat-value" id="pureLayer">1/3</div>
+      </div>
+      <div class="stat">
+        <span class="stat-label">CA代数</span>
+        <div class="stat-value" id="caGen">0</div>
+      </div>
+      <div class="stat">
+        <span class="stat-label">阴顶点</span>
+        <div class="stat-value gold" id="yinCount">4/8</div>
+      </div>
+      <div class="stat">
+        <span class="stat-label">激活通道</span>
+        <div class="stat-value" id="mixedCount">0/28</div>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="btn btn-primary" id="btnRun">暂停脉动</button>
+      <button class="btn btn-ghost"   id="btnReset">重置视角</button>
+      <button class="btn btn-ca"      id="btnCAStep">CA步进</button>
+      <button class="btn btn-ca"      id="btnCAInit">重置CA</button>
+      <button class="btn btn-ghost active" id="btnMixed">杂卦通道</button>
+      <button class="btn btn-ghost active" id="btnPure">纯卦嵌套</button>
+      <button class="btn btn-ghost active" id="btnYao">爻段切割</button>
+      <button class="btn btn-ghost active" id="btnLabels">卦名标注</button>
+    </div>
+  </section>
+
+  <!-- ── 图例 ── -->
+  <aside class="panel legend">
+    <h2>几何层次 · CA 规则</h2>
+    <ul class="legend-list">
+      <li class="legend-item">
+        <span class="swatch" style="background:#e8af34"></span>
+        <span><strong>五黄中宫 (0,0,0)</strong> — 洛书锚点，8顶点唯一共心点。</span>
+      </li>
+      <li class="legend-item">
+        <span class="swatch" style="background:#4f98a3"></span>
+        <span><strong>纯卦三层嵌套</strong> — 以顶点为心向外涌现，层厚 a=0.5，对应初/二/三爻。</span>
+      </li>
+      <li class="legend-item">
+        <span class="swatch" style="background:#5591c7"></span>
+        <span><strong>28杂卦通道</strong> — H=1棱 W=1 · H=2面对角 W=√2 · H=3体对角 W=√3。</span>
+      </li>
+      <li class="legend-item">
+        <span class="swatch" style="background:#e8af34"></span>
+        <span><strong>CA更新规则</strong> — new_state[i] = (∑ state[j]·W(H) &gt; W_max/2) ? 阴 : 阳；8顶点同步，每甲子周期步进一次。<br><em>点击顶点可手动切换阴阳。</em></span>
+      </li>
+    </ul>
+  </aside>
+
+  <!-- ── 离散状态面板 ── -->
+  <footer class="panel state-panel">
+    <div class="state-grid" id="stateGrid"></div>
+  </footer>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════
+// 主题切换
+// ═══════════════════════════════════════════════════════════
+(function(){
+  const btn=document.getElementById('themeToggle');
+  const root=document.documentElement;
+  let mode=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';
+  root.setAttribute('data-theme',mode);
+  function setIcon(){
+    btn.innerHTML=mode==='dark'
+      ?'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>'
+      :'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+  }
+  setIcon();
+  btn.addEventListener('click',()=>{mode=mode==='dark'?'light':'dark';root.setAttribute('data-theme',mode);setIcon();});
+})();
+
+// ═══════════════════════════════════════════════════════════
+// K₈ 几何常数
+// 顶点坐标由二进制索引直接计算：bit k → 第 k 轴坐标
+// 编码约定：0=阳(未显)  1=阴(已显)
+// bit0=爻₁(下爻)=x轴  bit1=爻₂(中爻)=y轴  bit2=爻₃(上爻)=z轴
+// ═══════════════════════════════════════════════════════════
+const ORIGIN = new THREE.Vector3(0,0,0);
+
+const VERTS = Array.from({length:8},(_,i)=>new THREE.Vector3(
+  -1.5 + 3.0*((i>>0)&1),
+  -1.5 + 3.0*((i>>1)&1),
+  -1.5 + 3.0*((i>>2)&1)
+));
+
+// ── 正确的卦名-坐标映射 ──────────────────────────────────
+// 先天体对角对宫（XOR=111，Hamming=3）验证：
+//   乾(000)↔坤(111)  巽(001)↔震(110)  离(010)↔坎(101)  艮(011)↔兑(100)
+// 后天洛书九宫：乾6 巽4 离9 艮8 兑7 坎1 震3 坤2（中宫5=原点球）
+const GLYPH  = ['乾','巽','离','艮','兑','坎','震','坤'];
+const LNAME  = ['☰','☴','☲','☶','☱','☵','☳','☷'];
+const LUOSHU = [ 6,   4,   9,   8,   7,   1,   3,   2 ];
+
+// 卦色（与五行对应）：乾银·巽绿·离红·艮棕·兑青·坎蓝·震黄·坤紫
+const GUA_COLORS = [
+  0xe0e0e0, // 乾 — 天·白银
+  0x50d080, // 巽 — 风·绿
+  0xff5555, // 离 — 火·红
+  0xa08060, // 艮 — 山·棕
+  0x50d0ff, // 兑 — 泽·青
+  0x4488ff, // 坎 — 水·蓝
+  0xffd030, // 震 — 雷·黄
+  0xb060ff, // 坤 — 地·紫
+];
+
+// ═══════════════════════════════════════════════════════════
+// Hamming 距离工具函数
+// ═══════════════════════════════════════════════════════════
+function popcount(n){ let c=0; while(n){c+=n&1;n>>=1;} return c; }
+
+// ═══════════════════════════════════════════════════════════
+// 28 条无向连线（由 Hamming 距离穷举）
+// H=1: 12条棱  H=2: 12条面对角  H=3: 4条体对角
+// ═══════════════════════════════════════════════════════════
+const CONNECTIONS=[];
+for(let i=0;i<8;i++) for(let j=i+1;j<8;j++){
+  CONNECTIONS.push({a:i, b:j, hamming:popcount(i^j)});
+}
+// CONNECTIONS.length === 28 ✓
+
+// ═══════════════════════════════════════════════════════════
+// 邻域预计算：NEIGHBORS[i] = { L1, L2, L3 }
+// L1: Hamming=1 邻居（3个）  权重 W1 = 1
+// L2: Hamming=2 邻居（3个）  权重 W2 = √2
+// L3: Hamming=3 邻居（1个）  权重 W3 = √3  ← 先天对宫
+// ═══════════════════════════════════════════════════════════
+const NEIGHBORS = Array.from({length:8},(_,i)=>{
+  const L1=[],L2=[],L3=[];
+  for(let j=0;j<8;j++){
+    if(i===j) continue;
+    const h=popcount(i^j);
+    if(h===1) L1.push(j);
+    else if(h===2) L2.push(j);
+    else L3.push(j); // h===3，唯一先天对宫
+  }
+  return {L1,L2,L3}; // |L1|=|L2|=3, |L3|=1
+});
+
+// ═══════════════════════════════════════════════════════════
+// 元胞机（CA）系统
+// 状态：caState[i] ∈ {0=阳,1=阴}
+// 规则：new_state[i] = f( Σ caState[j]·W(H(i,j)) )
+// 权重：W(H) = √H  →  W1=1, W2=√2, W3=√3
+// 阈值：W_max/2 ≈ 4.49（多数权重规则）
+// 更新：8顶点同时步进，无相位偏移，每甲子周期触发一次
+// ═══════════════════════════════════════════════════════════
+const W1=1, W2=Math.SQRT2, W3=Math.sqrt(3);
+const W_MAX = 3*W1 + 3*W2 + W3;   // ≈ 8.975
+const CA_THRESHOLD = W_MAX / 2;    // ≈ 4.49
+
+// 初始状态：上层4顶点（bit2=1，z=+1.5面）为阴
+// 演化规律：{4,5,6,7}→{0,1,2,3}→{4,5,6,7}→… 周期2，对应立方体两个对面交替
+let caState = new Uint8Array([0,0,0,0,1,1,1,1]);
+let caGeneration = 0;
+let t = 0; // 全局唯一时间变量
+let prevCycleCount = -1;
+
+function caStep(){
+  const next=new Uint8Array(8);
+  for(let i=0;i<8;i++){
+    let w=0;
+    const {L1,L2,L3}=NEIGHBORS[i];
+    L1.forEach(j=>w+=caState[j]*W1);
+    L2.forEach(j=>w+=caState[j]*W2);
+    L3.forEach(j=>w+=caState[j]*W3);
+    next[i]=(w>CA_THRESHOLD)?1:0;
+  }
+  caState=next;
+  caGeneration++;
+}
+
+function caReset(){
+  caState=new Uint8Array([0,0,0,0,1,1,1,1]);
+  caGeneration=0;
+  prevCycleCount=Math.floor(t/(Math.PI*2)); // 防止立即步进
+}
+
+// ═══════════════════════════════════════════════════════════
+// 甲子爻层状态（视觉层，独立于 CA）
+// 驱动纯卦三层嵌套的爻层高亮，每10步切换一层
+// ═══════════════════════════════════════════════════════════
+const discreteState=new Uint8Array(8);
+let activeLayer=0;
+
+function syncUpdate(jiazi){
+  const layer=jiazi<30
+    ?Math.floor(jiazi/10)          // 0→1→2 外向
+    :2-Math.floor((jiazi-30)/10);  // 2→1→0 内返
+  for(let i=0;i<8;i++) discreteState[i]=layer;
+  return layer;
+}
+
+// ═══════════════════════════════════════════════════════════
+// Three.js 初始化
+// ═══════════════════════════════════════════════════════════
+const wrap=document.getElementById('canvasWrap');
+const scene=new THREE.Scene();
+const camera=new THREE.PerspectiveCamera(52,1,0.1,500);
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.setClearColor(0x000000,0);
+wrap.appendChild(renderer.domElement);
+
+scene.add(new THREE.AmbientLight(0xffffff,0.75));
+const key=new THREE.DirectionalLight(0xbfd8ff,0.9);
+key.position.set(9,12,10); scene.add(key);
+const warm=new THREE.PointLight(0xffaa55,1.2,60); scene.add(warm);
+
+const ROOT=new THREE.Group(); scene.add(ROOT);
+
+// ── 五黄中宫（原点球）────────────────────────────────────
+const centerMesh=new THREE.Mesh(
+  new THREE.SphereGeometry(0.15,28,28),
+  new THREE.MeshStandardMaterial({color:0xe8af34,emissive:0xb07000,
+    emissiveIntensity:1.1,roughness:.2,metalness:.3})
+);
+ROOT.add(centerMesh);
+
+function makeLabel(txt,color='#ffffff',px=256){
+  const cv=document.createElement('canvas'); cv.width=px; cv.height=px;
+  const cx=cv.getContext('2d');
+  cx.fillStyle=color;
+  cx.font=`700 ${Math.floor(px*0.34)}px Satoshi,sans-serif`;
+  cx.textAlign='center'; cx.textBaseline='middle';
+  cx.fillText(txt,px/2,px/2);
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial(
+    {map:new THREE.CanvasTexture(cv),transparent:true,depthWrite:false}));
+  sp.scale.set(0.55,0.55,1); return sp;
+}
+const cl=makeLabel('5','#ffcc44'); cl.position.set(0,0.42,0); ROOT.add(cl);
+
+// ── 核心立方体轮廓 ────────────────────────────────────────
+const coreLine=new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(3,3,3)),
+  new THREE.LineBasicMaterial({color:0x4f98a3,transparent:true,opacity:.35})
+);
+ROOT.add(coreLine);
+
+// ── 纯卦三层嵌套立方体 ────────────────────────────────────
+// 以顶点为中心，层厚 a=0.5，边长 1.0/2.0/3.0（对应初/二/三爻区）
+const pureGroup=new THREE.Group(); ROOT.add(pureGroup);
+const pureLayerMeshes=[];
+
+VERTS.forEach((pos,vi)=>{
+  const col=new THREE.Color(GUA_COLORS[vi]);
+  const layers=[1.0,2.0,3.0].map((size,li)=>{
+    const mat=new THREE.LineBasicMaterial({
+      color:col,transparent:true,opacity:[0.55,0.38,0.22][li]
+    });
+    const line=new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(size,size,size)),mat);
+    line.position.copy(pos);
+    pureGroup.add(line);
+    return line;
+  });
+  pureLayerMeshes.push(layers);
+});
+
+// ── 顶点球体 ──────────────────────────────────────────────
+const vertGroup=new THREE.Group(); ROOT.add(vertGroup);
+const vertMeshes=VERTS.map((pos,i)=>{
+  const m=new THREE.Mesh(
+    new THREE.SphereGeometry(0.13,24,24),
+    new THREE.MeshStandardMaterial({
+      color:GUA_COLORS[i],emissive:GUA_COLORS[i],
+      emissiveIntensity:.5,roughness:.3
+    })
+  );
+  m.position.copy(pos); vertGroup.add(m); return m;
+});
+
+// ── 28 杂卦连线 + 6 爻段切割标记 ─────────────────────────
+const mixedGroup=new THREE.Group(); ROOT.add(mixedGroup);
+const yaoGroup  =new THREE.Group(); ROOT.add(yaoGroup);
+const labelsGroup=new THREE.Group(); ROOT.add(labelsGroup);
+
+const HAMMING_COLORS=[0,0x5591c7,0x4f98a3,0x9b6bff]; // H=1蓝·H=2青·H=3紫
+
+const mixedLines=[];
+const yaoMarkers=[];
+
+CONNECTIONS.forEach(({a,b,hamming})=>{
+  const s=VERTS[a], e=VERTS[b];
+  const geo=new THREE.BufferGeometry().setFromPoints([s,e]);
+  const line=new THREE.Line(geo,new THREE.LineBasicMaterial(
+    {color:HAMMING_COLORS[hamming],transparent:true,opacity:.28}));
+  mixedGroup.add(line);
+
+  const pulse=new THREE.Mesh(
+    new THREE.SphereGeometry(0.065,14,14),
+    new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.85}));
+  mixedGroup.add(pulse);
+  mixedLines.push({a,b,s,e,line,pulse,hamming});
+
+  // 6爻段：段中心标记球，前3爻暖色/后3爻冷色
+  const segs=[];
+  for(let k=0;k<6;k++){
+    const pt=new THREE.Vector3().lerpVectors(s,e,(k+0.5)/6);
+    const mat=new THREE.MeshBasicMaterial(
+      {color:k<3?0xff5580:0x55aaff,transparent:true,opacity:.55});
+    const seg=new THREE.Mesh(new THREE.SphereGeometry(0.032,10,10),mat);
+    seg.position.copy(pt);
+    yaoGroup.add(seg);
+    segs.push(seg);
+  }
+  yaoMarkers.push(segs);
+});
+
+// ── 卦名标注 ──────────────────────────────────────────────
+VERTS.forEach((pos,i)=>{
+  const lbl=makeLabel(`${GLYPH[i]}${LUOSHU[i]}`,'#c8c8c8',384);
+  lbl.position.copy(pos.clone().add(new THREE.Vector3(0,0.52,0)));
+  lbl.scale.set(0.72,0.36,1);
+  labelsGroup.add(lbl);
+});
+
+// ═══════════════════════════════════════════════════════════
+// 离散状态 UI 面板
+// ═══════════════════════════════════════════════════════════
+const stateGrid=document.getElementById('stateGrid');
+const stateCells=[];
+
+VERTS.forEach((_,i)=>{
+  const cell=document.createElement('div');
+  cell.className='state-cell';
+  cell.innerHTML=`
+    <span class="gua-name">${GLYPH[i]}${LNAME[i]}</span>
+    <div class="gua-bits">${i.toString(2).padStart(3,'0')}</div>
+    <div class="ca-state" id="ca${i}">阳</div>
+    <div class="luoshu">${LUOSHU[i]}</div>`;
+  stateGrid.appendChild(cell);
+  stateCells.push(cell);
+});
+
+function updateStateUI(){
+  const yinCount=Array.from(caState).reduce((s,v)=>s+v,0);
+  document.getElementById('caGen').textContent=caGeneration;
+  document.getElementById('yinCount').textContent=`${yinCount}/8`;
+  VERTS.forEach((_,i)=>{
+    const isYin=caState[i]===1;
+    const caEl=document.getElementById(`ca${i}`);
+    caEl.textContent=isYin?'阴':'阳';
+    stateCells[i].classList.toggle('yin',isYin);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+// 点击顶点切换阴阳（Raycasting）
+// ═══════════════════════════════════════════════════════════
+const raycaster=new THREE.Raycaster();
+const mouseNDC=new THREE.Vector2();
+let wasDragging=false;
+const dom=renderer.domElement;
+
+dom.addEventListener('click',e=>{
+  if(wasDragging) return;
+  const rect=dom.getBoundingClientRect();
+  mouseNDC.x=((e.clientX-rect.left)/rect.width)*2-1;
+  mouseNDC.y=-((e.clientY-rect.top)/rect.height)*2+1;
+  raycaster.setFromCamera(mouseNDC,camera);
+  const hits=raycaster.intersectObjects(vertMeshes);
+  if(hits.length>0){
+    const idx=vertMeshes.indexOf(hits[0].object);
+    if(idx>=0){ caState[idx]^=1; updateStateUI(); }
+  }
+});
+
+// ═══════════════════════════════════════════════════════════
+// 相机控制
+// ═══════════════════════════════════════════════════════════
+camera.position.set(8.5,7.2,9.2);
+camera.lookAt(ORIGIN);
+
+let drag=false, prev={x:0,y:0};
+let orbitX=-0.32, orbitY=0.68;
+let orbitR=camera.position.length();
+
+dom.addEventListener('mousedown',e=>{
+  drag=true; wasDragging=false; prev={x:e.clientX,y:e.clientY};
+});
+dom.addEventListener('touchstart',e=>{
+  drag=true; wasDragging=false;
+  const tt=e.touches[0]; prev={x:tt.clientX,y:tt.clientY};
+},{passive:true});
+
+function onMove(cx,cy){
+  if(!drag)return;
+  const dx=cx-prev.x, dy=cy-prev.y;
+  if(Math.abs(dx)+Math.abs(dy)>3) wasDragging=true;
+  orbitY+=dx*0.009;
+  orbitX+=dy*0.009;
+  orbitX=Math.max(-1.2,Math.min(1.2,orbitX));
+  prev={x:cx,y:cy};
+}
+dom.addEventListener('mousemove',e=>onMove(e.clientX,e.clientY));
+dom.addEventListener('touchmove',e=>{const tt=e.touches[0];onMove(tt.clientX,tt.clientY);},{passive:true});
+['mouseup','mouseleave','touchend'].forEach(ev=>dom.addEventListener(ev,()=>drag=false));
+dom.addEventListener('wheel',e=>{
+  e.preventDefault();
+  orbitR=Math.max(5,Math.min(22,orbitR*(1+Math.sign(e.deltaY)*0.07)));
+},{passive:false});
+
+document.getElementById('btnReset').addEventListener('click',()=>{
+  orbitX=-0.32; orbitY=0.68; orbitR=Math.sqrt(8.5**2+7.2**2+9.2**2);
+});
+
+// ── 显示切换 ──────────────────────────────────────────────
+let showMixed=true, showPure=true, showYao=true, showLabels=true;
+function makeToggle(btnId,getter,setter,group){
+  document.getElementById(btnId).addEventListener('click',function(){
+    setter(!getter()); group.visible=getter();
+    this.classList.toggle('active',getter());
+  });
+}
+makeToggle('btnMixed',()=>showMixed,v=>{showMixed=v;},mixedGroup);
+makeToggle('btnPure', ()=>showPure, v=>{showPure=v;}, pureGroup);
+makeToggle('btnYao',  ()=>showYao,  v=>{showYao=v;},  yaoGroup);
+makeToggle('btnLabels',()=>showLabels,v=>{showLabels=v;},labelsGroup);
+
+let running=true;
+document.getElementById('btnRun').addEventListener('click',function(){
+  running=!running; this.textContent=running?'暂停脉动':'恢复脉动';
+});
+document.getElementById('btnCAStep').addEventListener('click',()=>{
+  caStep(); updateStateUI();
+});
+document.getElementById('btnCAInit').addEventListener('click',()=>{
+  caReset(); updateStateUI();
+});
+
+// ── 尺寸响应 ──────────────────────────────────────────────
+function resize(){
+  const w=wrap.clientWidth, h=wrap.clientHeight;
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+  renderer.setSize(w,h);
+}
+window.addEventListener('resize',resize); resize();
+
+// ═══════════════════════════════════════════════════════════
+// 动画主循环
+// ═══════════════════════════════════════════════════════════
+const phaseStepEl =document.getElementById('phaseStep');
+const phaseModeEl =document.getElementById('phaseMode');
+const mixedCountEl=document.getElementById('mixedCount');
+const pureLayerEl =document.getElementById('pureLayer');
+
+function animate(){
+  requestAnimationFrame(animate);
+
+  // ── 唯一全局时钟（无顶点个体偏移）──
+  if(running) t+=0.012;
+
+  // ── 甲子步（0-59）──
+  const totalCycles=t/(Math.PI*2);
+  const breath=(totalCycles*60)%60;         // 0..60 连续
+  const jiazi=Math.floor(breath);            // 0..59 离散
+  const phase=(Math.sin(t)+1)/2;            // 0..1 呼吸幅度（全局同步）
+  const isOutward=breath<30;
+  const layerFrac=isOutward?breath/10:(60-breath)/10;  // 0..3
+  activeLayer=Math.min(2,Math.floor(layerFrac));
+
+  // ── CA步进：每完整甲子周期（2π）同步触发一次 ──
+  if(running){
+    const cycleCount=Math.floor(totalCycles);
+    if(cycleCount>prevCycleCount){
+      prevCycleCount=cycleCount;
+      caStep();
+    }
+  }
+
+  syncUpdate(jiazi);
+  updateStateUI();
+
+  // ── HUD ──
+  phaseStepEl.textContent =`${jiazi}/60`;
+  phaseModeEl.textContent =isOutward?'外向↑':'内返↓';
+  pureLayerEl.textContent =`${activeLayer+1}/3`;
+
+  // ── 相机轨道 ──
+  camera.position.set(
+    orbitR*Math.cos(orbitX)*Math.sin(orbitY),
+    orbitR*Math.sin(orbitX),
+    orbitR*Math.cos(orbitX)*Math.cos(orbitY)
+  );
+  camera.lookAt(ORIGIN);
+  ROOT.rotation.y+=running?0.0015:0;
+
+  // ── 五黄中宫 ──
+  centerMesh.scale.setScalar(1+0.18*phase);
+  warm.intensity=0.9+0.6*phase;
+
+  // ── 纯卦嵌套 + 顶点球：阴/阳状态差异化显示 ──
+  pureLayerMeshes.forEach((layers,vi)=>{
+    const isYin=caState[vi]===1;
+    layers.forEach((line,li)=>{
+      const isActive=li===activeLayer;
+      const baseOp=[0.55,0.38,0.22][li];
+      line.material.opacity=showPure
+        ?(isActive?baseOp+(isYin?0.42:0.28):baseOp*(isYin?0.65:0.35)):0;
+      line.scale.setScalar(isActive?1+0.04*Math.sin(t):1.0);
+    });
+    // 顶点球：阴=大·亮，阳=小·暗
+    vertMeshes[vi].scale.setScalar(isYin?1.4+0.25*phase:0.75+0.25*phase);
+    vertMeshes[vi].material.emissiveIntensity=isYin?0.9+0.6*phase:0.12+0.18*phase;
+  });
+
+  // ── 28 杂卦连线：按 CA 双端状态调节亮度和脉动 ──
+  let activeMixed=0;
+  mixedLines.forEach(({a,b,s,e,line,pulse})=>{
+    const bothYin=caState[a]===1&&caState[b]===1;
+    const anyYin =caState[a]===1||caState[b]===1;
+    // 脉动球：外向A→B，内返B→A
+    const dir=breath<30?breath/30:1-(breath-30)/30;
+    pulse.position.lerpVectors(s,e,dir);
+    const lineOp=bothYin?0.75+0.2*phase:anyYin?0.28+0.15*phase:0.07+0.05*phase;
+    line.material.opacity =showMixed?lineOp:0;
+    pulse.material.opacity=showMixed?(anyYin?0.55+0.4*phase:0.12):0;
+    pulse.scale.setScalar(bothYin?1.3+0.6*phase:anyYin?0.7+0.35*phase:0.35);
+    if(lineOp>0.3) activeMixed++;
+  });
+  mixedCountEl.textContent=`${activeMixed}/28`;
+
+  // ── 爻段切割标记：当前激活爻层高亮，CA活跃通道提升亮度 ──
+  yaoMarkers.forEach((segs,li)=>{
+    const {a,b}=mixedLines[li];
+    const anyYin=caState[a]===1||caState[b]===1;
+    segs.forEach((seg,k)=>{
+      const inward=breath>=30;
+      const segLayer=inward?(k-3):k;
+      const isActive=segLayer===activeLayer&&(inward?k>=3:k<3);
+      const op=isActive?(anyYin?0.95:0.72):(anyYin?0.28:0.14);
+      seg.material.opacity=showYao?op:0;
+      seg.scale.setScalar(isActive?1.6:0.9);
+    });
+  });
+
+  // ── 核心轮廓 ──
+  coreLine.material.opacity=0.22+0.18*phase;
+
+  renderer.render(scene,camera);
+}
+
+// 初始化状态面板
+updateStateUI();
+
+animate();
+</script>
+</body>
+</html>
